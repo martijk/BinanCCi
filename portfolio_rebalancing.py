@@ -1,12 +1,19 @@
 import math
 import time
 
-from binance_api import create_order, get_balances, get_exchange_stepsize, get_price
+from binance_api import create_order, get_balances, get_exchange_stepsize, get_price, transfer_dust, get_flexible_position, redeem_flexible_position
 from settings import BINANCE_ORDER_MIN, PAIRING, WAIT_SECONDS_BETWEEN_ORDERS
 
 
+def redeem():
+    for asset in get_flexible_position():
+        if asset['canRedeem']:
+            redeem_flexible_position(asset['productId'], asset['freeAmount'])
+    time.sleep(WAIT_SECONDS_BETWEEN_ORDERS)
+
 def rebalance(balances, required_weights):
     required_changes = _get_required_changes_in_portfolio(required_weights)
+    dust_symbols = []
 
     for symbol, change_in_value, change, price in required_changes:
         pair = f'{symbol}{PAIRING}'
@@ -15,21 +22,35 @@ def rebalance(balances, required_weights):
             continue
 
         stepsize = get_exchange_stepsize(pair)
+        # TODO: round up if selling?
         quantity = round(change, int(-math.log10(stepsize)))
         if quantity < 0 and -quantity > balances[symbol]:
             quantity += stepsize
         change_in_value = quantity * price
 
+        # just let binance try if close to amount?
         if change_in_value < -BINANCE_ORDER_MIN:
             print(f'Selling {pair}. Change: {quantity}. Estimated change in value: {change_in_value}.')
             create_order(pair, 'sell', -quantity)
             time.sleep(WAIT_SECONDS_BETWEEN_ORDERS)
+        # just let binance try if close to amount?
         elif change_in_value > BINANCE_ORDER_MIN:
             print(f'Buying {pair}. Change: {quantity}. Estimated change in value: {change_in_value}.')
             create_order(pair, 'buy', quantity)
             time.sleep(WAIT_SECONDS_BETWEEN_ORDERS)
         else:
             print(f'Could not create an order for {pair}: required change in value ({change_in_value}) is too small in magnitude.')
+
+        # TODO: check if order succeeded (if applicable), or maybe check value first (.5 of min order size?)
+        if symbol not in required_weights:
+            dust_symbols.append(symbol)
+
+    if dust_symbols:
+        import sys
+        if input(f'Dust: {dust_symbols}. Continue y/[n]? ') not in ['y', 'yes']:
+            return
+        print(transfer_dust(dust_symbols))
+        time.sleep(WAIT_SECONDS_BETWEEN_ORDERS)
 
 
 def _get_required_changes_in_portfolio(required_weights):
@@ -49,6 +70,7 @@ def _get_required_changes_in_portfolio(required_weights):
         portfolio[symbol]['value'] = portfolio[symbol]['balance'] * price if price is not None else None
 
     total_value = sum([portfolio[s]['value'] for s in portfolio if portfolio[s]['value'] is not None])
+    print(f'Total value: {total_value}')
 
     for symbol in portfolio:
         if symbol not in required_weights:

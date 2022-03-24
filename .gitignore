@@ -1,2 +1,4 @@
 .idea/
 coin_ids.json
+env/
+__pycache__/

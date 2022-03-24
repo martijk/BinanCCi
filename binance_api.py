@@ -34,4 +34,29 @@ def create_order(symbol, side, quantity):
               'quantity': quantity,
               'type': 'MARKET'}
 
+    #return params
     return send_signed_request('POST', path, params)
+
+
+def transfer_dust(symbols):
+    path = f'{API_BASE}/sapi/v1/asset/dust'
+    params = {'asset': ','.join(symbols)}
+
+    #return params
+    return send_signed_request('POST', path, params)
+
+
+def redeem_flexible_position(symbol, amount):
+    path = f'{API_BASE}/sapi/v1/lending/daily/redeem'
+    params = {'productId': symbol,
+              'amount': amount,
+              'type': 'FAST'}
+
+    return send_signed_request('POST', path, params)
+
+
+def get_flexible_position(symbol=''):
+    path = f'{API_BASE}/sapi/v1/lending/daily/token/position'
+    params = {'asset': symbol}
+
+    return send_signed_request('GET', path, params)
